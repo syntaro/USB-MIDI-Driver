@@ -423,86 +423,88 @@ public final class MidiInputDevice {
                                 midiEventListener.onMidiControlChange(sender, cable, byte1 & 0xf, byte2, byte3);
                             }
 
-                            // process RPN/NRPN messages
-                            switch (byte2) {
-                                case 6: {
-                                    // RPN/NRPN value MSB
-                                    rpnNrpnValueMsb[cable] = byte3 & 0x7f;
-                                    if (rpnStatus[cable] == RPN_STATUS_RPN) {
-                                        rpnNrpnFunction[cable] = ((rpnFunctionMsb[cable] & 0x7f) << 7) | (rpnFunctionLsb[cable] & 0x7f);
-                                        rpnCacheMsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueMsb[cable]);
-                                        rpnNrpnValueLsb[cable] = rpnCacheLsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
-                                        if (midiEventListener != null) {
-                                            midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
-                                            midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                            if (midiEventListener != null && midiEventListener.needProcessDataEntry()) {
+                                switch (byte2) {
+                                    case 6: {
+                                        // RPN/NRPN value MSB
+                                        rpnNrpnValueMsb[cable] = byte3 & 0x7f;
+                                        if (rpnStatus[cable] == RPN_STATUS_RPN) {
+                                            rpnNrpnFunction[cable] = ((rpnFunctionMsb[cable] & 0x7f) << 7) | (rpnFunctionLsb[cable] & 0x7f);
+                                            rpnCacheMsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueMsb[cable]);
+                                            rpnNrpnValueLsb[cable] = rpnCacheLsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
+                                            if (midiEventListener != null) {
+                                                midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
+                                                midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                            }
+                                        } else if (rpnStatus[cable] == RPN_STATUS_NRPN) {
+                                            rpnNrpnFunction[cable] = ((nrpnFunctionMsb[cable] & 0x7f) << 7) | (nrpnFunctionLsb[cable] & 0x7f);
+                                            nrpnCacheMsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueMsb[cable]);
+                                            rpnNrpnValueLsb[cable] = nrpnCacheLsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
+                                            if (midiEventListener != null) {
+                                                midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
+                                                midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                            }
                                         }
-                                    } else if (rpnStatus[cable] == RPN_STATUS_NRPN) {
-                                        rpnNrpnFunction[cable] = ((nrpnFunctionMsb[cable] & 0x7f) << 7) | (nrpnFunctionLsb[cable] & 0x7f);
-                                        nrpnCacheMsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueMsb[cable]);
-                                        rpnNrpnValueLsb[cable] = nrpnCacheLsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
-                                        if (midiEventListener != null) {
-                                            midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
-                                            midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                        break;
+                                    }
+                                    case 38: {
+                                        // RPN/NRPN value LSB
+                                        rpnNrpnValueLsb[cable] = byte3 & 0x7f;
+                                        if (rpnStatus[cable] == RPN_STATUS_RPN) {
+                                            rpnNrpnFunction[cable] = ((rpnFunctionMsb[cable] & 0x7f) << 7) | (rpnFunctionLsb[cable] & 0x7f);
+                                            rpnNrpnValueMsb[cable] = rpnCacheMsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
+                                            rpnCacheLsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueLsb[cable]);
+                                            if (midiEventListener != null) {
+                                                midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
+                                                midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                            }
+                                        } else if (rpnStatus[cable] == RPN_STATUS_NRPN) {
+                                            rpnNrpnFunction[cable] = ((nrpnFunctionMsb[cable] & 0x7f) << 7) | (nrpnFunctionLsb[cable] & 0x7f);
+                                            rpnNrpnValueMsb[cable] = nrpnCacheMsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
+                                            nrpnCacheLsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueLsb[cable]);
+                                            if (midiEventListener != null) {
+                                                midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
+                                                midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                            }
                                         }
+                                        break;
                                     }
-                                    break;
-                                }
-                                case 38: {
-                                    // RPN/NRPN value LSB
-                                    rpnNrpnValueLsb[cable] = byte3 & 0x7f;
-                                    if (rpnStatus[cable] == RPN_STATUS_RPN) {
-                                        rpnNrpnFunction[cable] = ((rpnFunctionMsb[cable] & 0x7f) << 7) | (rpnFunctionLsb[cable] & 0x7f);
-                                        rpnNrpnValueMsb[cable] = rpnCacheMsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
-                                        rpnCacheLsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueLsb[cable]);
-                                        if (midiEventListener != null) {
-                                            midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
-                                            midiEventListener.onMidiRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                    case 98: {
+                                        // NRPN parameter number LSB
+                                        nrpnFunctionLsb[cable] = byte3 & 0x7f;
+                                        rpnStatus[cable] = RPN_STATUS_NRPN;
+                                        break;
+                                    }
+                                    case 99: {
+                                        // NRPN parameter number MSB
+                                        nrpnFunctionMsb[cable] = byte3 & 0x7f;
+                                        rpnStatus[cable] = RPN_STATUS_NRPN;
+                                        break;
+                                    }
+                                    case 100: {
+                                        // RPN parameter number LSB
+                                        rpnFunctionLsb[cable] = byte3 & 0x7f;
+                                        if (rpnFunctionMsb[cable] == 0x7f && rpnFunctionLsb[cable] == 0x7f) {
+                                            rpnStatus[cable] = RPN_STATUS_NONE;
+                                        } else {
+                                            rpnStatus[cable] = RPN_STATUS_RPN;
                                         }
-                                    } else if (rpnStatus[cable] == RPN_STATUS_NRPN) {
-                                        rpnNrpnFunction[cable] = ((nrpnFunctionMsb[cable] & 0x7f) << 7) | (nrpnFunctionLsb[cable] & 0x7f);
-                                        rpnNrpnValueMsb[cable] = nrpnCacheMsb[cable].get(rpnNrpnFunction[cable], 0/*if not found*/);
-                                        nrpnCacheLsb[cable].put(rpnNrpnFunction[cable], rpnNrpnValueLsb[cable]);
-                                        if (midiEventListener != null) {
-                                            midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], (rpnNrpnValueMsb[cable] << 7 | rpnNrpnValueLsb[cable]));
-                                            midiEventListener.onMidiNRPNReceived(sender, cable, byte1 & 0xf, rpnNrpnFunction[cable], rpnNrpnValueMsb[cable], rpnNrpnValueLsb[cable]);
+                                        break;
+                                    }
+                                    case 101: {
+                                        // RPN parameter number MSB
+                                        rpnFunctionMsb[cable] = byte3 & 0x7f;
+                                        if (rpnFunctionMsb[cable] == 0x7f && rpnFunctionLsb[cable] == 0x7f) {
+                                            rpnStatus[cable] = RPN_STATUS_NONE;
+                                        } else {
+                                            rpnStatus[cable] = RPN_STATUS_RPN;
                                         }
+                                        break;
                                     }
-                                    break;
+                                    default:
+                                        break;
                                 }
-                                case 98: {
-                                    // NRPN parameter number LSB
-                                    nrpnFunctionLsb[cable] = byte3 & 0x7f;
-                                    rpnStatus[cable] = RPN_STATUS_NRPN;
-                                    break;
-                                }
-                                case 99: {
-                                    // NRPN parameter number MSB
-                                    nrpnFunctionMsb[cable] = byte3 & 0x7f;
-                                    rpnStatus[cable] = RPN_STATUS_NRPN;
-                                    break;
-                                }
-                                case 100: {
-                                    // RPN parameter number LSB
-                                    rpnFunctionLsb[cable] = byte3 & 0x7f;
-                                    if (rpnFunctionMsb[cable] == 0x7f && rpnFunctionLsb[cable] == 0x7f) {
-                                        rpnStatus[cable] = RPN_STATUS_NONE;
-                                    } else {
-                                        rpnStatus[cable] = RPN_STATUS_RPN;
-                                    }
-                                    break;
-                                }
-                                case 101: {
-                                    // RPN parameter number MSB
-                                    rpnFunctionMsb[cable] = byte3 & 0x7f;
-                                    if (rpnFunctionMsb[cable] == 0x7f && rpnFunctionLsb[cable] == 0x7f) {
-                                        rpnStatus[cable] = RPN_STATUS_NONE;
-                                    } else {
-                                        rpnStatus[cable] = RPN_STATUS_RPN;
-                                    }
-                                    break;
-                                }
-                                default:
-                                    break;
+                                break;
                             }
                             break;
                         case 12:

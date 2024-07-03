@@ -275,4 +275,6 @@ public interface OnMidiInputEventListener {
 	 * @param value 0-16383
 	 */
 	void onMidiNRPNReceived(@NonNull MidiInputDevice sender, int cable, int channel, int function, int value);
+
+	boolean needProcessDataEntry();
 }

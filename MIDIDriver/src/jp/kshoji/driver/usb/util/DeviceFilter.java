@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import jp.kshoji.driver.midi.R;
 import jp.kshoji.driver.midi.util.Constants;
 
 /**

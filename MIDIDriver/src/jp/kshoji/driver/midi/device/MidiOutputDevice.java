@@ -10,9 +10,11 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import java.util.LinkedList;
-import java.util.Queue;
+import java.io.ByteArrayOutputStream;
 
+import jp.synthtarou.midinet.patchlib.PacketData;
+import jp.synthtarou.midinet.patchlib.PacketDataGenerator;
+import jp.synthtarou.midinet.patchlib.TheQueue;
 import jp.kshoji.driver.midi.util.ReusableByteArrayOutputStream;
 import jp.kshoji.driver.midi.util.UsbMidiDeviceUtils;
 
@@ -29,9 +31,6 @@ public final class MidiOutputDevice {
     final UsbEndpoint outputEndpoint;
 
     final WaiterThread waiterThread;
-
-    private static final int BUFFER_POOL_SIZE = 1024;
-	final LinkedList<byte[]> bufferPool = new LinkedList<>();
 
     private final ReusableByteArrayOutputStream sysexTransferDataStream = new ReusableByteArrayOutputStream();
 
@@ -56,10 +55,6 @@ public final class MidiOutputDevice {
 
         waiterThread.setName("MidiOutputDevice[" + usbDevice.getDeviceName() + "].WaiterThread");
 		waiterThread.start();
-
-		for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
-			bufferPool.addLast(new byte[4]);
-		}
 	}
 
     /**
@@ -158,11 +153,14 @@ public final class MidiOutputDevice {
 	 *
 	 * @author K.Shoji
 	 */
+    PacketDataGenerator _packetGenegator = new PacketDataGenerator(4);
+
     @SuppressLint("NewApi")
 	private final class WaiterThread extends Thread {
-        final Queue<byte[]> queue = new LinkedList<>();
+        final TheQueue<PacketData> _queue = new TheQueue<>();
 
-		volatile boolean stopFlag;
+
+        volatile boolean stopFlag;
 		volatile boolean suspendFlag;
 
         /**
@@ -175,99 +173,73 @@ public final class MidiOutputDevice {
 
 		@Override
 		public void run() {
-			byte[] dequedDataBuffer;
             int dequedDataBufferLength;
-			int queueSize;
 			final int maxPacketSize = outputEndpoint.getMaxPacketSize();
 			byte[] endpointBuffer = new byte[maxPacketSize];
 			int endpointBufferLength;
 			int bufferPosition;
             int usbRequestFailCount;
             int bytesWritten;
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
 
             while (!stopFlag) {
-                dequedDataBuffer = null;
-                synchronized (queue) {
-                    queueSize = queue.size();
-                    if (queueSize > 0) {
-                        dequedDataBuffer = queue.poll();
-                    }
+                if (_queue.isEmpty()) {
+                    _queue.popAndNoRemove();
                 }
-
-                if (suspendFlag) {
-                    try {
-                        // sleep until interrupted
-                        sleep(500);
-                    } catch (InterruptedException e) {
-                        // interrupted: event queued, or stopFlag/suspendFlag changed.
-                    }
-                    continue;
+                stream.reset();
+                while (_queue.isEmpty() == false) {
+                    PacketData packet = _queue.pop();
+                    stream.write(packet._data, packet._offset, packet._count);
+                    _packetGenegator.markRecyled(packet);
                 }
+                dequedDataBufferLength = stream.size();
+                byte[] data = stream.toByteArray();
 
-                if (dequedDataBuffer != null) {
-                    dequedDataBufferLength = dequedDataBuffer.length;
+                synchronized (usbDeviceConnection) {
+                    // usb can't send data larger than maxPacketSize. split the data.
+                    for (bufferPosition = 0; bufferPosition < dequedDataBufferLength; bufferPosition += maxPacketSize) {
+                        endpointBufferLength = dequedDataBufferLength - bufferPosition;
+                        if (endpointBufferLength > maxPacketSize) {
+                            endpointBufferLength = maxPacketSize;
+                        }
 
-                    synchronized (usbDeviceConnection) {
-                        // usb can't send data larger than maxPacketSize. split the data.
-                        for (bufferPosition = 0; bufferPosition < dequedDataBufferLength; bufferPosition += maxPacketSize) {
-                            endpointBufferLength = dequedDataBufferLength - bufferPosition;
-                            if (endpointBufferLength > maxPacketSize) {
-                                endpointBufferLength = maxPacketSize;
-                            }
-
-                            usbRequestFailCount = 0;
-                            // if device disconnected, usbDeviceConnection.bulkTransfer returns negative value
-                            while (true) {
-                                // loop until transfer completed
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-                                    // JELLY_BEAN_MR2 supports bulkTransfer with offset
-                                    bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, dequedDataBuffer, bufferPosition, endpointBufferLength, 10);
+                        usbRequestFailCount = 0;
+                        // if device disconnected, usbDeviceConnection.bulkTransfer returns negative value
+                        while (true) {
+                            // loop until transfer completed
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                                // JELLY_BEAN_MR2 supports bulkTransfer with offset
+                                bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, data, bufferPosition, endpointBufferLength, 10);
+                            } else {
+                                if (bufferPosition > 0) {
+                                    // copy the fragment to the endpointBuffer before transfer
+                                    System.arraycopy(data, bufferPosition, endpointBuffer, 0, endpointBufferLength);
+                                    bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, endpointBuffer, endpointBufferLength, 10);
                                 } else {
-                                    if (bufferPosition > 0) {
-                                        // copy the fragment to the endpointBuffer before transfer
-                                        System.arraycopy(dequedDataBuffer, bufferPosition, endpointBuffer, 0, endpointBufferLength);
-                                        bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, endpointBuffer, endpointBufferLength, 10);
-                                    } else {
-                                        // it's the first fragment.. copy is not required
-                                        bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, dequedDataBuffer, endpointBufferLength, 10);
-                                    }
-                                }
-
-                                if (bytesWritten < 0) {
-                                    usbRequestFailCount++;
-                                } else {
-                                    break;
-                                }
-
-                                if (usbRequestFailCount > 10) {
-                                    // maybe disconnected
-                                    stopFlag = true;
-                                    break;
+                                    // it's the first fragment.. copy is not required
+                                    bytesWritten = usbDeviceConnection.bulkTransfer(outputEndpoint, data, endpointBufferLength, 10);
                                 }
                             }
 
-                            if (stopFlag) {
+                            if (bytesWritten < 0) {
+                                usbRequestFailCount++;
+                            } else {
+                                break;
+                            }
+
+                            if (usbRequestFailCount > 10) {
+                                // maybe disconnected
+                                stopFlag = true;
                                 break;
                             }
                         }
-                    }
 
-                    if (dequedDataBuffer.length == 4) {
-                        synchronized (queue) {
-                            bufferPool.addLast(dequedDataBuffer);
+                        if (stopFlag) {
+                            break;
                         }
                     }
                 }
 
-				// no more data in queue, sleep.
-				if (queueSize == 0 && !interrupted()) {
-					try {
-						// sleep until interrupted
-						sleep(500);
-					} catch (InterruptedException e) {
-						// interrupted: event queued, or stopFlag changed.
-					}
-				}
 			}
 		}
 	}
@@ -282,27 +254,9 @@ public final class MidiOutputDevice {
 	 * @param byte3 the third byte
 	 */
 	private void sendMidiMessage(int codeIndexNumber, int cable, int byte1, int byte2, int byte3) {
-        while (bufferPool.isEmpty()) {
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException ignored) {
-
-            }
-        }
-
-        synchronized (waiterThread.queue) {
-			byte[] writeBuffer = bufferPool.removeFirst();
-
-			writeBuffer[0] = (byte) (((cable & 0xf) << 4) | (codeIndexNumber & 0xf));
-			writeBuffer[1] = (byte) byte1;
-			writeBuffer[2] = (byte) byte2;
-			writeBuffer[3] = (byte) byte3;
-
-			waiterThread.queue.add(writeBuffer);
-		}
-
-		// message has been queued, so interrupt the waiter thread
-		waiterThread.interrupt();
+        byte cableCalc = (byte) (((cable & 0xf) << 4) | (codeIndexNumber & 0xf));
+        PacketData packet = _packetGenegator.fromData(cableCalc, byte1, byte2, byte3);
+        waiterThread._queue.push(packet);
 	}
 
 	/**
@@ -492,13 +446,9 @@ public final class MidiOutputDevice {
                 }
             }
 
-            synchronized (waiterThread.queue) {
-                // allocating new byte[] here...
-                waiterThread.queue.add(sysexTransferDataStream.toByteArray());
-            }
-
-            // message has been queued, so interrupt the waiter thread
-            waiterThread.interrupt();
+            byte[] data= sysexTransferDataStream.toByteArray();
+            PacketData packet = _packetGenegator.fromData(data, 0, data.length);
+            waiterThread._queue.push(packet);
         } else {
             switch (systemExclusive.length) {
                 case 1:

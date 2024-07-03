@@ -372,5 +372,10 @@ public final class SingleMidiService extends Service {
                 midiInputEventListener.onMidiNRPNReceived(sender, cable, channel, function, value);
             }
         }
+
+        @Override
+        public boolean needProcessDataEntry() {
+            return false;
+        }
     };
 }

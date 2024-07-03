@@ -497,4 +497,9 @@ public class MidiFragmentHostActivity extends Activity implements OnMidiDeviceDe
 			fragment.onMidiNRPNReceived(sender, cable, channel, function, value);
 		}
 	}
+
+	@Override
+	public boolean needProcessDataEntry() {
+		return false;
+	}
 }
